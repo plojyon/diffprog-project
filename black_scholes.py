@@ -26,6 +26,8 @@ class BlackScholesPINN:
     def __init__(self, config: BSConfig):
         self.config = config
         self.n_assets = len(config["colloc_min_S"])
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {self.device}")
 
         # Input dimension is n_assets + 1 (for time)
         self.model = PINN(
@@ -63,6 +65,12 @@ class BlackScholesPINN:
         """
         S_data, t_data, C_data, r, sigmas, rho = X
 
+        # Move data to device
+        S_data = S_data.to(self.device)
+        t_data = t_data.to(self.device)
+        C_data = C_data.to(self.device)
+        rho = rho.to(self.device)
+
         pbar = tqdm(range(self.config["epochs"]), desc="Training", unit="epoch")
         for _ in pbar:
             self.optimizer.zero_grad()
@@ -72,6 +80,10 @@ class BlackScholesPINN:
                 max_S=self.config["colloc_max_S"],
                 max_T=self.config["colloc_max_T"],
             )
+
+            # Move collocation points to device
+            S_colloc = S_colloc.to(self.device)
+            t_colloc = t_colloc.to(self.device)
 
             C_pred = self.model(S_data, t_data)
             loss_data = self._data_loss(C_pred, C_data)
@@ -96,4 +108,6 @@ class BlackScholesPINN:
     def predict(self, S_eval: torch.Tensor, t_eval: torch.Tensor) -> torch.Tensor:
         """Predict option prices for given S and t."""
         with torch.no_grad():
+            S_eval = S_eval.to(self.device)
+            t_eval = t_eval.to(self.device)
             return self.model(S_eval, t_eval)

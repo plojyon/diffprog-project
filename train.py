@@ -13,15 +13,17 @@ def load_data(data_path: str):
     Returns:
         Tuple containing (S_data, t_data, C_data, r, sigmas, rho)
     """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     with open(data_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    S = torch.tensor(data["S"], dtype=torch.float32, requires_grad=True)
-    t = torch.tensor(data["t"], dtype=torch.float32, requires_grad=True)
-    C = torch.tensor(data["C"], dtype=torch.float32)
+    S = torch.tensor(data["S"], dtype=torch.float32, requires_grad=True, device=device)
+    t = torch.tensor(data["t"], dtype=torch.float32, requires_grad=True, device=device)
+    C = torch.tensor(data["C"], dtype=torch.float32, device=device)
     r = data["r"]
     sigmas = data["sigmas"]
-    rho = torch.tensor(data["rho"], dtype=torch.float32)
+    rho = torch.tensor(data["rho"], dtype=torch.float32, device=device)
 
     return S, t, C, r, sigmas, rho
 

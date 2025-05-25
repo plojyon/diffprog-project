@@ -21,6 +21,7 @@ class PINN(nn.Module):
             output_dim: Number of output dimensions
         """
         super().__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         layers = [nn.Linear(input_dim, hidden_dims[0]), nn.Tanh()]
         for i in range(len(hidden_dims) - 1):
@@ -28,6 +29,7 @@ class PINN(nn.Module):
         layers.append(nn.Linear(hidden_dims[-1], output_dim))
 
         self.net = nn.Sequential(*layers)
+        self.net.to(self.device)
 
     def forward(self, S: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """Forward pass of the network.
@@ -51,6 +53,7 @@ class PINN(nn.Module):
                 np.random.uniform(min_S[i], max_S[i], (count, 1)),
                 dtype=torch.float32,
                 requires_grad=True,
+                device=self.device,
             )
             S_points.append(S_i)
 
@@ -62,6 +65,7 @@ class PINN(nn.Module):
             np.random.uniform(0, max_T, (count, 1)),
             dtype=torch.float32,
             requires_grad=True,
+            device=self.device,
         )
 
         return S, t
