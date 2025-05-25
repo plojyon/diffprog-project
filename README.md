@@ -28,3 +28,27 @@ python train.py
 python evaluate.py
 ```
 
+## Parameters
+
+### data_parameters.json
+
+- `K`: strike price
+- `T`: time to maturity
+- `r`: risk-free rate
+- `sigmas`: volatilities of the assets
+- `rho`: correlation matrix of the assets
+- `N_data`: number of data points
+- `S0`: initial prices of the assets
+- `bias`: bias term
+
+### model_parameters.json
+
+- `epochs`: number of training epochs
+- `lr`: learning rate
+- `alpha`: regularization parameter
+- `path`: path to save the model
+- `colloc_min_S`: minimum value of the state space for collocation points
+- `colloc_max_S`: maximum value of the state space for collocation points
+- `colloc_max_T`: maximum value of the time space for collocation points
+- `colloc_count`: number of collocation points
+- `hidden_dims`: number of hidden dimensions

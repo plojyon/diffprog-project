@@ -4,20 +4,37 @@ import torch
 from black_scholes import BlackScholesPINN
 
 
-def load_data(data_path):
-    with open(data_path, "r") as f:
+def load_data(data_path: str):
+    """Load training data from a JSON file.
+
+    Args:
+        data_path: Path to the data file
+
+    Returns:
+        Tuple containing (S_data, t_data, C_data, r, sigmas, rho)
+    """
+    with open(data_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return (
-        torch.tensor(data["S"], dtype=torch.float32, requires_grad=True),
-        torch.tensor(data["t"], dtype=torch.float32, requires_grad=True),
-        torch.tensor(data["C"], dtype=torch.float32),
-        data["r"],
-        data["sigma"],
-    )
+
+    S = torch.tensor(data["S"], dtype=torch.float32, requires_grad=True)
+    t = torch.tensor(data["t"], dtype=torch.float32, requires_grad=True)
+    C = torch.tensor(data["C"], dtype=torch.float32)
+    r = data["r"]
+    sigmas = data["sigmas"]
+    rho = torch.tensor(data["rho"], dtype=torch.float32)
+
+    return S, t, C, r, sigmas, rho
 
 
-def main(model_parameters, data_path):
+def main(model_parameters: dict, data_path: str):
+    """Train the multi-asset Black-Scholes PINN model.
+
+    Args:
+        model_parameters: Model parameters
+        data_path: Path to the training data file
+    """
     X = load_data(data_path)
+
     model = BlackScholesPINN(model_parameters)
     model.train(X)
     model.export()
@@ -26,7 +43,7 @@ def main(model_parameters, data_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Train a PINN on the Black-Scholes equation"
+        description="Train a PINN on the multi-asset Black-Scholes equation"
     )
     parser.add_argument(
         "--model_parameters",
@@ -42,6 +59,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    with open(args.model_parameters, "r") as f:
+    with open(args.model_parameters, "r", encoding="utf-8") as f:
         model_parameters = json.load(f)
     main(model_parameters, args.data)

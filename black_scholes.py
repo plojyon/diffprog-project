@@ -1,86 +1,82 @@
+from typing import TypedDict, List, Tuple
+
 import torch
-import torch.autograd as autograd
-import numpy as np
-from torch import nn
-from typing import TypedDict
-
-
 from tqdm import tqdm
-
-
-def pde_residual(model, S, t, r, sigma):
-    """Calculate the PDE residual for the Black-Scholes equation."""
-    C = model(S, t)
-    dC_dt = autograd.grad(
-        C, t, grad_outputs=torch.ones_like(C), create_graph=True, retain_graph=True
-    )[0]
-    dC_dS = autograd.grad(
-        C, S, grad_outputs=torch.ones_like(C), create_graph=True, retain_graph=True
-    )[0]
-    d2C_dS2 = autograd.grad(
-        dC_dS, S, grad_outputs=torch.ones_like(C), create_graph=True, retain_graph=True
-    )[0]
-    return dC_dt + 0.5 * sigma**2 * S**2 * d2C_dS2 + r * S * dC_dS - r * C
-
-
-class PINN(nn.Module):
-    """A simple feedforward neural network."""
-
-    def __init__(self):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(2, 64),
-            nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.Tanh(),
-            nn.Linear(64, 1),
-        )
-
-    def forward(self, S, t):
-        return self.net(torch.cat([S, t], dim=1))
+from pinn import PINN
+from pde import pde_residual
 
 
 class BSConfig(TypedDict):
-    """Configuration for the Black-Scholes PINN model."""
+    """Configuration for the multi-asset Black-Scholes PINN model."""
 
     epochs: int
     lr: float
     alpha: float
     path: str
-    colloc_min_S: float
-    colloc_max_S: float
+    colloc_min_S: List[float]  # Minimum price for each asset
+    colloc_max_S: List[float]  # Maximum price for each asset
     colloc_max_T: float
+    colloc_count: int
+    hidden_dims: List[int]
 
 
 class BlackScholesPINN:
-    """A Physics-Informed Neural Network (PINN) for the Black-Scholes equation."""
+    """A Physics-Informed Neural Network (PINN) for the multi-asset Black-Scholes equation."""
+
     def __init__(self, config: BSConfig):
         self.config = config
-        self.model = PINN()
+        self.n_assets = len(config["colloc_min_S"])
+
+        # Input dimension is n_assets + 1 (for time)
+        self.model = PINN(
+            input_dim=self.n_assets + 1, hidden_dims=config["hidden_dims"]
+        )
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config["lr"])
 
-    def _data_loss(self, C_pred, C_data):
+    def _data_loss(self, C_pred: torch.Tensor, C_data: torch.Tensor) -> torch.Tensor:
         """Calculate the loss on the supplied data points."""
         return torch.mean((C_pred - C_data) ** 2)
 
-    def _pde_loss(self, S_colloc, t_colloc, r, sigma):
+    def _pde_loss(
+        self,
+        S_colloc: torch.Tensor,
+        t_colloc: torch.Tensor,
+        r: float,
+        sigmas: List[float],
+        rho: torch.Tensor,
+    ) -> torch.Tensor:
         """Calculate the PDE residual loss on collocation points."""
-        pde = pde_residual(self.model, S_colloc, t_colloc, r, sigma)
+        pde = pde_residual(self.model, S_colloc, t_colloc, r, sigmas, rho)
         return torch.mean(pde**2)
 
-    def train(self, X):
-        """Train the PINN model."""
-        S_data, t_data, C_data, r, sigma = X
+    def train(
+        self,
+        X: Tuple[
+            torch.Tensor, torch.Tensor, torch.Tensor, float, List[float], torch.Tensor
+        ],
+    ):
+        """Train the PINN model.
+
+        Args:
+            X: Tuple containing (S_data, t_data, C_data, r, sigmas, rho)
+               where S_data has shape (batch_size, n_assets)
+        """
+        S_data, t_data, C_data, r, sigmas, rho = X
 
         pbar = tqdm(range(self.config["epochs"]), desc="Training", unit="epoch")
-        for epoch in pbar:
+        for _ in pbar:
             self.optimizer.zero_grad()
-            S_colloc, t_colloc = self._generate_collocation_points()
+            S_colloc, t_colloc = self.model.generate_collocation_points(
+                count=self.config["colloc_count"],
+                min_S=self.config["colloc_min_S"],
+                max_S=self.config["colloc_max_S"],
+                max_T=self.config["colloc_max_T"],
+            )
 
             C_pred = self.model(S_data, t_data)
             loss_data = self._data_loss(C_pred, C_data)
-            loss_pde = self._pde_loss(S_colloc, t_colloc, r, sigma)
-            loss = loss_data + loss_pde
+            loss_pde = self._pde_loss(S_colloc, t_colloc, r, sigmas, rho)
+            loss = loss_data + self.config["alpha"] * loss_pde
 
             loss.backward()
             self.optimizer.step()
@@ -88,32 +84,16 @@ class BlackScholesPINN:
             pbar.set_postfix(
                 {
                     "Total loss": f"{loss.item():.5f}",
-                    "Collocation point loss": f"{loss_data.item():.5f}",
-                    "PDE residual": f"{loss_pde.item():.5f}",
+                    "Data loss": f"{loss_data.item():.5f}",
+                    "Residual loss": f"{loss_pde.item():.5f}",
                 }
             )
 
-    def _generate_collocation_points(self):
-        """Generate uniformly randomly scattered collocation points."""
-        S = torch.tensor(
-            np.random.uniform(
-                self.config["colloc_min_S"], self.config["colloc_max_S"], (self.config["colloc_count"], 1)
-            ),
-            dtype=torch.float32,
-            requires_grad=True,
-        )
-        t = torch.tensor(
-            np.random.uniform(0, self.config["colloc_max_T"], (self.config["colloc_count"], 1)),
-            dtype=torch.float32,
-            requires_grad=True,
-        )
-        return S, t
-
-    def export(self, path="model.pth"):
+    def export(self):
         """Export the trained model to a file."""
-        torch.save(self.model.state_dict(), path)
+        torch.save(self.model.state_dict(), self.config["path"])
 
-    def predict(self, S_eval, t_eval):
+    def predict(self, S_eval: torch.Tensor, t_eval: torch.Tensor) -> torch.Tensor:
         """Predict option prices for given S and t."""
         with torch.no_grad():
             return self.model(S_eval, t_eval)
