@@ -10,6 +10,7 @@ def pde_residual(
     r: float,
     sigmas: List[float],
     rho: torch.Tensor,
+    selected_dims: List[int],
 ):
     """Calculate the PDE residual for the multi-asset Black-Scholes equation.
 
@@ -20,6 +21,7 @@ def pde_residual(
         r: Risk-free interest rate
         sigmas: List of volatilities for each asset
         rho: Correlation matrix of shape (n_assets, n_assets)
+        selected_dims: List of indices of the dimensions to use for the PDE residual
     """
     C = model(S, t)
     # batch_size = S.shape[0]
@@ -30,9 +32,9 @@ def pde_residual(
         C, t, grad_outputs=torch.ones_like(C), create_graph=True, retain_graph=True
     )[0]
 
-    # First derivatives with respect to each asset
+    # First derivatives with respect
     dC_dS = []
-    for i in range(n_assets):
+    for i in selected_dims:
         dC_dSi = autograd.grad(
             C, S, grad_outputs=torch.ones_like(C), create_graph=True, retain_graph=True
         )[0][:, i : i + 1]
@@ -40,13 +42,13 @@ def pde_residual(
 
     # Second derivatives and cross-derivatives
     d2C_dS2 = []
-    for i in range(n_assets):
+    for i_idx, i in enumerate(selected_dims):
         row = []
-        for j in range(n_assets):
+        for j_idx, j in enumerate(selected_dims):
             if i == j:
                 # Second derivative
                 d2C_dSi2 = autograd.grad(
-                    dC_dS[i],
+                    dC_dS[i_idx],
                     S,
                     grad_outputs=torch.ones_like(C),
                     create_graph=True,
@@ -56,7 +58,7 @@ def pde_residual(
             else:
                 # Cross derivative
                 d2C_dSidSj = autograd.grad(
-                    dC_dS[i],
+                    dC_dS[i_idx],
                     S,
                     grad_outputs=torch.ones_like(C),
                     create_graph=True,
@@ -69,8 +71,8 @@ def pde_residual(
     residual = dC_dt
 
     # Add diffusion terms
-    for i in range(n_assets):
-        for j in range(n_assets):
+    for i_idx, i in enumerate(selected_dims):
+        for j_idx, j in enumerate(selected_dims):
             residual += (
                 0.5
                 * sigmas[i]
@@ -78,12 +80,12 @@ def pde_residual(
                 * rho[i, j]
                 * S[:, i : i + 1]
                 * S[:, j : j + 1]
-                * d2C_dS2[i][j]
+                * d2C_dS2[i_idx][j_idx]
             )
 
     # Add drift terms
-    for i in range(n_assets):
-        residual += r * S[:, i : i + 1] * dC_dS[i]
+    for i_idx, i in enumerate(selected_dims):
+        residual += r * S[:, i : i + 1] * dC_dS[i_idx]
 
     # Add discounting term
     residual -= r * C

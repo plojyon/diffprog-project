@@ -7,6 +7,7 @@ from pde import pde_residual
 import os
 import time
 import json
+from plot import save_loss_plot
 
 
 class BSConfig(TypedDict):
@@ -16,11 +17,10 @@ class BSConfig(TypedDict):
     lr: float
     alpha: float
     path: str
-    colloc_min_S: List[float]  # Minimum price for each asset
-    colloc_max_S: List[float]  # Maximum price for each asset
-    colloc_max_T: float
+    n_assets: int
     colloc_count: int
     hidden_dims: List[int]
+    sdgd_dim_count: int
 
 
 class BlackScholesPINN:
@@ -28,7 +28,6 @@ class BlackScholesPINN:
 
     def __init__(self, config: BSConfig):
         self.config = config
-        self.n_assets = len(config["colloc_min_S"])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
@@ -36,7 +35,7 @@ class BlackScholesPINN:
 
         # Input dimension is n_assets + 1 (for time)
         self.model = PINN(
-            input_dim=self.n_assets + 1, hidden_dims=config["hidden_dims"]
+            input_dim=self.config["n_assets"] + 1, hidden_dims=config["hidden_dims"]
         )
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config["lr"])
 
@@ -51,9 +50,12 @@ class BlackScholesPINN:
         r: float,
         sigmas: List[float],
         rho: torch.Tensor,
+        selected_dims: List[int],
     ) -> torch.Tensor:
         """Calculate the PDE residual loss on collocation points."""
-        pde = pde_residual(self.model, S_colloc, t_colloc, r, sigmas, rho)
+        pde = pde_residual(
+            self.model, S_colloc, t_colloc, r, sigmas, rho, selected_dims
+        )
         return torch.mean(pde**2)
 
     def train(
@@ -70,6 +72,9 @@ class BlackScholesPINN:
         """
         S_data, t_data, C_data, r, sigmas, rho = X
 
+        err = f"Model expected {self.config['n_assets']} assets, got {S_data.shape[1]}"
+        assert S_data.shape[1] == self.config["n_assets"], err
+
         # Move data to device
         S_data = S_data.to(self.device)
         t_data = t_data.to(self.device)
@@ -84,114 +89,97 @@ class BlackScholesPINN:
         # Start timing
         start_time = time.time()
 
+        stop_reason = "epoch_limit"
         pbar = tqdm(range(self.config["epochs"]), desc="Training", unit="epoch")
-        for _ in pbar:
-            self.optimizer.zero_grad()
-            S_colloc, t_colloc = self.model.generate_collocation_points(
-                count=self.config["colloc_count"],
-                min_S=self.config["colloc_min_S"],
-                max_S=self.config["colloc_max_S"],
-                max_T=self.config["colloc_max_T"],
-            )
+        try:
+            for _ in pbar:
+                self.optimizer.zero_grad()
 
-            # Move collocation points to device
-            S_colloc = S_colloc.to(self.device)
-            t_colloc = t_colloc.to(self.device)
+                # Randomly select subset of dimensions for SDGD
+                n_assets = self.config["n_assets"]
+                sdgd_dim_count = self.config.get("sdgd_dim_count", n_assets)
+                selected_dims = torch.randperm(n_assets)[:sdgd_dim_count]
 
-            C_pred = self.model(S_data, t_data)
-            loss_data = self._data_loss(C_pred, C_data)
-            loss_pde = self._pde_loss(S_colloc, t_colloc, r, sigmas, rho)
-            loss = loss_data + self.config["alpha"] * loss_pde
+                S_colloc, t_colloc = self.model.generate_collocation_points(
+                    count=self.config["colloc_count"],
+                    n_assets=self.config["n_assets"],
+                )
 
-            loss.backward()
-            self.optimizer.step()
+                # Move collocation points to device
+                S_colloc = S_colloc.to(self.device)
+                t_colloc = t_colloc.to(self.device)
 
-            # Track losses
-            total_losses.append(loss.item())
-            data_losses.append(loss_data.item())
-            pde_losses.append(loss_pde.item())
+                C_pred = self.model(S_data, t_data)
+                loss_data = self._data_loss(C_pred, C_data)
+                loss_pde = self._pde_loss(
+                    S_colloc, t_colloc, r, sigmas, rho, selected_dims
+                )
+                a = self.config["alpha"]
+                loss = a * loss_data + (1 - a) * loss_pde
 
-            pbar.set_postfix(
-                {
-                    "Total loss": f"{loss.item():.5f}",
-                    "Data loss": f"{loss_data.item():.5f}",
-                    "Residual loss": f"{loss_pde.item():.5f}",
-                }
-            )
+                loss.backward()
+                self.optimizer.step()
+
+                # Track losses
+                total_losses.append(loss.item())
+                data_losses.append(loss_data.item())
+                pde_losses.append(loss_pde.item())
+
+                pbar.set_postfix(
+                    {
+                        "Total loss": f"{loss.item():.5f}",
+                        "Data loss": f"{loss_data.item():.5f}",
+                        "Residual loss": f"{loss_pde.item():.5f}",
+                    }
+                )
+
+                if loss.item() < 1000:
+                    print("Training finished")
+                    stop_reason = "loss_threshold"
+                    break
+        except KeyboardInterrupt:
+            print("Training interrupted by user")
+            stop_reason = "keyboard_interrupt"
 
         # Calculate training time
         training_time = time.time() - start_time
 
         # Save the loss plot
-        self._save_loss_plot(total_losses, data_losses, pde_losses)
-        self._save_training_log(total_losses, data_losses, pde_losses, training_time)
-
-    def _save_loss_plot(self, total_losses: List[float], data_losses: List[float], pde_losses: List[float]):
-        """Save a plot of the training losses to disk.
-        
-        Args:
-            total_losses: List of total loss values
-            data_losses: List of data loss values
-            pde_losses: List of PDE loss values
-        """
-        import matplotlib.pyplot as plt
-
-        fig, ax1 = plt.subplots(figsize=(10, 6))
-        epochs = range(1, len(total_losses) + 1)
-
-        # Plot total loss and data loss on primary y-axis
-        line1 = ax1.plot(epochs, total_losses, 'b-', label='Total Loss', linewidth=2)
-        line2 = ax1.plot(epochs, data_losses, 'g-', label='Data Loss', linewidth=2)
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Total/Data Loss', color='b')
-        ax1.tick_params(axis='y', labelcolor='b')
-
-        # Create secondary y-axis for PDE loss
-        ax2 = ax1.twinx()
-        line3 = ax2.plot(epochs, pde_losses, 'r-', label='PDE Loss', linewidth=2)
-        ax2.set_ylabel('PDE Loss', color='r')
-        ax2.tick_params(axis='y', labelcolor='r')
-        
-        # Add legend
-        lines = line1 + line2 + line3
-        labels = [l.get_label() for l in lines]
-        ax1.legend(lines, labels, loc='upper right')
-
-        plt.title('Training Losses')
-        plt.grid(True)
-
-        plot_path = os.path.join(self.config["path"], "loss.png")
-        plt.savefig(plot_path, bbox_inches='tight', dpi=300)
-        plt.close()
-        print(f"Loss plot saved to {plot_path}")
+        save_loss_plot(self.config["path"], total_losses, data_losses, pde_losses)
+        self._save_training_log(
+            total_losses, data_losses, pde_losses, training_time, stop_reason
+        )
 
     def _save_training_log(
-        self, 
-        total_losses: List[float], 
-        data_losses: List[float], 
+        self,
+        total_losses: List[float],
+        data_losses: List[float],
         pde_losses: List[float],
-        training_time: float
+        training_time: float,
+        stop_reason: str,
     ):
         """Save training metrics to a JSON file.
-        
+
         Args:
             total_losses: List of total loss values
             data_losses: List of data loss values
             pde_losses: List of PDE loss values
             training_time: Total training time in seconds
+            stop_reason: Reason for stopping training
         """
         log_data = {
             "training_time_seconds": training_time,
+            "stop_reason": stop_reason,
             "loss_history": {
                 "total": total_losses,
                 "data": data_losses,
-                "pde": pde_losses
+                "pde": pde_losses,
             },
         }
 
         log_path = os.path.join(self.config["path"], "training_log.json")
         with open(log_path, "w") as f:
-            json.dump(log_data, f, indent=2)
+            json.dump(log_data, f, indent="\t")
         print(f"Training log saved to {log_path}")
 
     def export(self):

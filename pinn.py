@@ -40,17 +40,12 @@ class PINN(nn.Module):
         """
         return self.net(torch.cat([S, t], dim=1))
 
-    def generate_collocation_points(
-        self, count: int, min_S: List[float], max_S: List[float], max_T: float
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def generate_collocation_points(self, count: int, n_assets: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate uniformly randomly scattered collocation points."""
-        n_assets = len(min_S)
-
-        # Generate random points for each asset
         S_points = []
         for i in range(n_assets):
             S_i = torch.tensor(
-                np.random.uniform(min_S[i], max_S[i], (count, 1)),
+                np.random.uniform(0, 1, (count, 1)),
                 dtype=torch.float32,
                 requires_grad=True,
                 device=self.device,
@@ -62,7 +57,7 @@ class PINN(nn.Module):
 
         # Generate time points
         t = torch.tensor(
-            np.random.uniform(0, max_T, (count, 1)),
+            np.random.uniform(0, 1, (count, 1)),
             dtype=torch.float32,
             requires_grad=True,
             device=self.device,
