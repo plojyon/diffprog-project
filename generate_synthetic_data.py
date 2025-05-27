@@ -65,7 +65,7 @@ def generate_multi_asset_paths(
     C = np.maximum(basket_value - K, 0) * np.exp(-r * (T - t))
 
     # Add noise to the prices
-    C += np.random.normal(params["bias"], params["noise_variance"], size=C.shape)
+    C += np.random.normal(0, params["noise_variance"], size=C.shape)
 
     return S, t, C
 

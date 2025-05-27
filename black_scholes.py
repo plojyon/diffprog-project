@@ -4,6 +4,9 @@ import torch
 from tqdm import tqdm
 from pinn import PINN
 from pde import pde_residual
+import os
+import time
+import json
 
 
 class BSConfig(TypedDict):
@@ -28,6 +31,8 @@ class BlackScholesPINN:
         self.n_assets = len(config["colloc_min_S"])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
+
+        os.makedirs(config["path"], exist_ok=True)
 
         # Input dimension is n_assets + 1 (for time)
         self.model = PINN(
@@ -71,6 +76,14 @@ class BlackScholesPINN:
         C_data = C_data.to(self.device)
         rho = rho.to(self.device)
 
+        # Initialize lists to track losses
+        total_losses = []
+        data_losses = []
+        pde_losses = []
+
+        # Start timing
+        start_time = time.time()
+
         pbar = tqdm(range(self.config["epochs"]), desc="Training", unit="epoch")
         for _ in pbar:
             self.optimizer.zero_grad()
@@ -93,6 +106,11 @@ class BlackScholesPINN:
             loss.backward()
             self.optimizer.step()
 
+            # Track losses
+            total_losses.append(loss.item())
+            data_losses.append(loss_data.item())
+            pde_losses.append(loss_pde.item())
+
             pbar.set_postfix(
                 {
                     "Total loss": f"{loss.item():.5f}",
@@ -101,9 +119,86 @@ class BlackScholesPINN:
                 }
             )
 
+        # Calculate training time
+        training_time = time.time() - start_time
+
+        # Save the loss plot
+        self._save_loss_plot(total_losses, data_losses, pde_losses)
+        self._save_training_log(total_losses, data_losses, pde_losses, training_time)
+
+    def _save_loss_plot(self, total_losses: List[float], data_losses: List[float], pde_losses: List[float]):
+        """Save a plot of the training losses to disk.
+        
+        Args:
+            total_losses: List of total loss values
+            data_losses: List of data loss values
+            pde_losses: List of PDE loss values
+        """
+        import matplotlib.pyplot as plt
+
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        epochs = range(1, len(total_losses) + 1)
+
+        # Plot total loss and data loss on primary y-axis
+        line1 = ax1.plot(epochs, total_losses, 'b-', label='Total Loss', linewidth=2)
+        line2 = ax1.plot(epochs, data_losses, 'g-', label='Data Loss', linewidth=2)
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Total/Data Loss', color='b')
+        ax1.tick_params(axis='y', labelcolor='b')
+
+        # Create secondary y-axis for PDE loss
+        ax2 = ax1.twinx()
+        line3 = ax2.plot(epochs, pde_losses, 'r-', label='PDE Loss', linewidth=2)
+        ax2.set_ylabel('PDE Loss', color='r')
+        ax2.tick_params(axis='y', labelcolor='r')
+        
+        # Add legend
+        lines = line1 + line2 + line3
+        labels = [l.get_label() for l in lines]
+        ax1.legend(lines, labels, loc='upper right')
+
+        plt.title('Training Losses')
+        plt.grid(True)
+
+        plot_path = os.path.join(self.config["path"], "loss.png")
+        plt.savefig(plot_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        print(f"Loss plot saved to {plot_path}")
+
+    def _save_training_log(
+        self, 
+        total_losses: List[float], 
+        data_losses: List[float], 
+        pde_losses: List[float],
+        training_time: float
+    ):
+        """Save training metrics to a JSON file.
+        
+        Args:
+            total_losses: List of total loss values
+            data_losses: List of data loss values
+            pde_losses: List of PDE loss values
+            training_time: Total training time in seconds
+        """
+        log_data = {
+            "training_time_seconds": training_time,
+            "loss_history": {
+                "total": total_losses,
+                "data": data_losses,
+                "pde": pde_losses
+            },
+        }
+
+        log_path = os.path.join(self.config["path"], "training_log.json")
+        with open(log_path, "w") as f:
+            json.dump(log_data, f, indent=2)
+        print(f"Training log saved to {log_path}")
+
     def export(self):
         """Export the trained model to a file."""
-        torch.save(self.model.state_dict(), self.config["path"])
+        weights_path = os.path.join(self.config["path"], "weights.pth")
+        torch.save(self.model.state_dict(), weights_path)
+        print(f"Model weights saved to {weights_path}")
 
     def predict(self, S_eval: torch.Tensor, t_eval: torch.Tensor) -> torch.Tensor:
         """Predict option prices for given S and t."""

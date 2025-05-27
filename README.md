@@ -37,9 +37,8 @@ python evaluate.py
 - `r`: risk-free rate
 - `sigmas`: volatilities of the assets
 - `rho`: correlation matrix of the assets
-- `N_data`: number of data points
 - `S0`: initial prices of the assets
-- `bias`: bias term
+- `N_data`: number of data points to generate
 
 ### model_parameters.json
 
