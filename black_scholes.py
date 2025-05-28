@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Tuple
+from typing import TypedDict, List, Tuple, Optional
 
 import torch
 from tqdm import tqdm
@@ -21,6 +21,12 @@ class BSConfig(TypedDict):
     colloc_count: int
     hidden_dims: List[int]
     sdgd_dim_count: int
+
+
+def fill_array(array: List[float], length: int, new_item: float) -> List[float]:
+    """Add new_item to array until it has length length."""
+    missing_items = length - len(array)
+    return array + [new_item] * missing_items
 
 
 class BlackScholesPINN:
@@ -50,7 +56,7 @@ class BlackScholesPINN:
         r: float,
         sigmas: List[float],
         rho: torch.Tensor,
-        selected_dims: List[int],
+        selected_dims: Optional[List[int]] = None,
     ) -> torch.Tensor:
         """Calculate the PDE residual loss on collocation points."""
         pde = pde_residual(
@@ -58,11 +64,19 @@ class BlackScholesPINN:
         )
         return torch.mean(pde**2)
 
+    def _total_loss(
+        self, loss_data: torch.Tensor | float, loss_pde: torch.Tensor | float
+    ) -> torch.Tensor | float:
+        """Calculate the total loss."""
+        a = self.config["alpha"]
+        return a * loss_data + (1 - a) * loss_pde
+
     def train(
         self,
         X: Tuple[
             torch.Tensor, torch.Tensor, torch.Tensor, float, List[float], torch.Tensor
         ],
+        time_limit_seconds: int,
     ):
         """Train the PINN model.
 
@@ -85,9 +99,12 @@ class BlackScholesPINN:
         total_losses = []
         data_losses = []
         pde_losses = []
+        real_losses = []
 
         # Start timing
         start_time = time.time()
+        last_real_loss_time = 0
+        uncounted_time = 0  # time needed for calculating the real loss
 
         stop_reason = "epoch_limit"
         pbar = tqdm(range(self.config["epochs"]), desc="Training", unit="epoch")
@@ -114,28 +131,50 @@ class BlackScholesPINN:
                 loss_pde = self._pde_loss(
                     S_colloc, t_colloc, r, sigmas, rho, selected_dims
                 )
-                a = self.config["alpha"]
-                loss = a * loss_data + (1 - a) * loss_pde
+                loss = self._total_loss(loss_data, loss_pde)
 
                 loss.backward()
                 self.optimizer.step()
 
+                loss = loss.item()
+                loss_data = loss_data.item()
+                loss_pde = loss_pde.item()
+
+                # Calculate real loss every 10 seconds
+                if sdgd_dim_count == n_assets:
+                    real_pde_loss = loss_pde
+                elif time.time() - last_real_loss_time >= 10:
+                    real_loss_time = time.time()
+                    real_pde_loss = self._pde_loss(S_colloc, t_colloc, r, sigmas, rho)
+                    real_pde_loss = real_pde_loss.item()
+                    uncounted_time += time.time() - real_loss_time
+                    last_real_loss_time = time.time()
+                else:
+                    real_pde_loss = real_losses[-1]
+
                 # Track losses
-                total_losses.append(loss.item())
-                data_losses.append(loss_data.item())
-                pde_losses.append(loss_pde.item())
+                total_losses.append(loss)
+                data_losses.append(loss_data)
+                pde_losses.append(loss_pde)
+                real_losses.append(real_pde_loss)
 
                 pbar.set_postfix(
                     {
-                        "Total loss": f"{loss.item():.5f}",
-                        "Data loss": f"{loss_data.item():.5f}",
-                        "Residual loss": f"{loss_pde.item():.5f}",
+                        "Total loss": f"{self._total_loss(loss_data, real_pde_loss):.2f}",
+                        "Data loss": f"{loss_data:.0f}",
+                        "Residual loss": f"{loss_pde:.0f}",
+                        "Real PDE loss": f"{real_pde_loss:.0f}",
                     }
                 )
 
-                if loss.item() < 1000:
-                    print("Training finished")
+                if self._total_loss(loss_data, real_pde_loss) < 10:
+                    print("Loss threshold achieved")
                     stop_reason = "loss_threshold"
+                    break
+
+                if time.time() - start_time > time_limit_seconds:
+                    print("Time limit exceeded")
+                    stop_reason = "time_limit"
                     break
         except KeyboardInterrupt:
             print("Training interrupted by user")
@@ -144,10 +183,17 @@ class BlackScholesPINN:
         # Calculate training time
         training_time = time.time() - start_time
 
-        # Save the loss plot
-        save_loss_plot(self.config["path"], total_losses, data_losses, pde_losses)
         self._save_training_log(
-            total_losses, data_losses, pde_losses, training_time, stop_reason
+            total_losses,
+            data_losses,
+            pde_losses,
+            real_losses,
+            training_time,
+            uncounted_time,
+            stop_reason,
+        )
+        save_loss_plot(
+            self.config["path"], total_losses, data_losses, pde_losses, real_losses
         )
 
     def _save_training_log(
@@ -155,7 +201,9 @@ class BlackScholesPINN:
         total_losses: List[float],
         data_losses: List[float],
         pde_losses: List[float],
+        real_losses: List[float],
         training_time: float,
+        uncounted_time: float,
         stop_reason: str,
     ):
         """Save training metrics to a JSON file.
@@ -164,16 +212,20 @@ class BlackScholesPINN:
             total_losses: List of total loss values
             data_losses: List of data loss values
             pde_losses: List of PDE loss values
-            training_time: Total training time in seconds
+            real_losses: List of real loss values (using all dimensions)
+            training_time: Total real training time in seconds
+            uncounted_time: Time needed for calculating the real loss
             stop_reason: Reason for stopping training
         """
         log_data = {
             "training_time_seconds": training_time,
             "stop_reason": stop_reason,
+            "uncounted_time": uncounted_time,
             "loss_history": {
                 "total": total_losses,
                 "data": data_losses,
                 "pde": pde_losses,
+                "real": real_losses,
             },
         }
 

@@ -6,3 +6,4 @@ data.json
 *.pth
 models
 data_parameters.json
+reports

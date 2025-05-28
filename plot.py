@@ -8,6 +8,7 @@ def save_loss_plot(
     total_losses: List[float],
     data_losses: List[float],
     pde_losses: List[float],
+    real_losses: List[float],
 ):
     """Save a plot of the training losses to disk.
 
@@ -15,6 +16,7 @@ def save_loss_plot(
         total_losses: List of total loss values
         data_losses: List of data loss values
         pde_losses: List of PDE loss values
+        real_losses: List of real loss values
     """
     fig, ax1 = plt.subplots(figsize=(10, 6))
     epochs = range(1, len(total_losses) + 1)
@@ -32,7 +34,13 @@ def save_loss_plot(
     ax2.set_ylabel("PDE Loss", color="r")
     ax2.tick_params(axis="y", labelcolor="r")
 
-    lines = line1 + line2 + line3
+    # Create tertiary y-axis for real loss
+    ax3 = ax1.twinx()
+    line4 = ax3.plot(epochs, real_losses, "y-", label="Real Loss", linewidth=2)
+    ax3.set_ylabel("Real Loss", color="y")
+    ax3.tick_params(axis="y", labelcolor="y")
+
+    lines = line1 + line2 + line3 + line4
     labels = [l.get_label() for l in lines]
     ax1.legend(lines, labels, loc="upper right")
 

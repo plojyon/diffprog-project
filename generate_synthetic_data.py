@@ -103,4 +103,4 @@ if __name__ == "__main__":
     }
 
     json.dump(data, open(args.output, "w", encoding="utf-8"))
-    print(f"Saved to {args.output}")
+    print(f"Created {args.output}")

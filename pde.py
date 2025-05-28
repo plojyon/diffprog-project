@@ -1,6 +1,6 @@
 import torch
 import torch.autograd as autograd
-from typing import List
+from typing import List, Optional
 
 
 def pde_residual(
@@ -10,7 +10,7 @@ def pde_residual(
     r: float,
     sigmas: List[float],
     rho: torch.Tensor,
-    selected_dims: List[int],
+    selected_dims: Optional[List[int]] = None,
 ):
     """Calculate the PDE residual for the multi-asset Black-Scholes equation.
 
@@ -23,6 +23,9 @@ def pde_residual(
         rho: Correlation matrix of shape (n_assets, n_assets)
         selected_dims: List of indices of the dimensions to use for the PDE residual
     """
+    if selected_dims is None:
+        selected_dims = list(range(S.shape[1]))
+
     C = model(S, t)
     # batch_size = S.shape[0]
     n_assets = S.shape[1]
