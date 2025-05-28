@@ -31,6 +31,15 @@ def load_training_logs(models_dir: str) -> Dict[str, Dict]:
     return logs
 
 
+def sorted_legend():
+    handles, labels = plt.gca().get_legend_handles_labels()
+    label_parts = [[int(part) for part in label.split("-")] for label in labels]
+    sorted_indices = [i for i, _ in sorted(enumerate(label_parts), key=lambda x: x[1])]
+    sorted_handles = [handles[i] for i in sorted_indices]
+    sorted_labels = [labels[i] for i in sorted_indices]
+    plt.legend(sorted_handles, sorted_labels, loc="lower right")
+
+
 def plot_loss_vs_epochs(logs: Dict[str, Dict], output_dir: str):
     """Plot total loss vs epochs for all models.
 
@@ -45,9 +54,9 @@ def plot_loss_vs_epochs(logs: Dict[str, Dict], output_dir: str):
         plt.plot(epochs, log["loss_history"]["total"], label=model_name, linewidth=2)
 
     plt.xlabel("Epoch")
-    plt.ylabel("Total Loss")
-    plt.title("Total Loss vs Epochs")
-    plt.legend()
+    plt.ylabel("Loss")
+    plt.title("Loss vs epochs")
+    sorted_legend()
     plt.grid(True)
     plt.yscale("log")  # Use log scale for better visualization
 
@@ -80,9 +89,9 @@ def plot_loss_vs_time(logs: Dict[str, Dict], output_dir: str):
         plt.plot(times, log["loss_history"]["total"], label=model_name, linewidth=2)
 
     plt.xlabel("Time (seconds)")
-    plt.ylabel("Total Loss")
-    plt.title("Total Loss vs Time")
-    plt.legend()
+    plt.ylabel("Loss")
+    plt.title("Loss vs time")
+    sorted_legend()
     plt.grid(True)
     plt.yscale("log")  # Use log scale for better visualization
 
