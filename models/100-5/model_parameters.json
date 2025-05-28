@@ -1,0 +1,10 @@
+{
+    "epochs": 1000000000,
+    "lr": 1e-3,
+    "alpha": 0.01,
+    "path": "models/100-5",
+    "colloc_count": 100,
+    "n_assets": 100,
+    "hidden_dims": [16, 16],
+    "sdgd_dim_count": 5
+}

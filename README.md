@@ -13,7 +13,8 @@ pip install -r requirements.txt
 
 2. Generate synthetic data (or supply your own)
 ```bash
-python generate_syntetic_data.py
+python generate_data_parameters.py --n_assets 10
+python generate_synthetic_data.py
 ```
 
 3. Train the PINN
@@ -22,32 +23,10 @@ python generate_syntetic_data.py
 python train.py
 ```
 
-4. Evaluate the model
+4. Plot the results
 
 ```bash
-python evaluate.py
+python report.py
 ```
 
-## Parameters
-
-### data_parameters.json
-
-- `K`: strike price
-- `T`: time to maturity
-- `r`: risk-free rate
-- `sigmas`: volatilities of the assets
-- `rho`: correlation matrix of the assets
-- `S0`: initial prices of the assets
-- `N_data`: number of data points to generate
-
-### model_parameters.json
-
-- `epochs`: number of training epochs
-- `lr`: learning rate
-- `alpha`: regularization parameter
-- `path`: path to save the model
-- `colloc_min_S`: minimum value of the state space for collocation points
-- `colloc_max_S`: maximum value of the state space for collocation points
-- `colloc_max_T`: maximum value of the time space for collocation points
-- `colloc_count`: number of collocation points
-- `hidden_dims`: number of hidden dimensions
+Alternatively, use `test.sh` to run the preset experiments.

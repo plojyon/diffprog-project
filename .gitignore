@@ -1,9 +1,4 @@
 venv
 __pycache__
 *.pyc
-data.json
 *.pkl
-*.pth
-models
-data_parameters.json
-reports

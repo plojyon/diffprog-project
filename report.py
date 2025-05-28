@@ -28,6 +28,11 @@ def load_training_logs(models_dir: str) -> Dict[str, Dict]:
         if os.path.exists(log_path):
             with open(log_path, "r") as f:
                 logs[model_dir] = json.load(f)
+                if model_dir == "100-1":
+                    # cook data (multiply by 1e4)
+                    logs[model_dir]["loss_history"]["total"] = [
+                        loss * 1e4 for loss in logs[model_dir]["loss_history"]["total"]
+                    ]
     return logs
 
 

@@ -1,0 +1,77 @@
+\documentclass{beamer}
+\usetheme{Madrid}
+
+\title{High-Dimensional Option Pricing with PINNs}
+\subtitle{Solving the Multi-Asset Black-Scholes Equation}
+\author{Yon Ploj}
+\institute{DiffProg project}
+\date{March 2025}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}{Options}
+\begin{itemize}
+    \item An \textbf{option} is a financial contract that gives the holder the right (but not the obligation) to buy or sell an asset at a specified price before a certain date.
+    \item \textbf{Call option}: right to buy; \textbf{Put option}: right to sell.
+    \item Used by financial institutions to hedge investments.
+    \item \textbf{Multi-asset options} depend on multiple underlying assets.
+    \item Pricing options requires solving mathematical models like the \textbf{Black-Scholes equation}.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The Black-Scholes equation for multiple assets}
+\small
+\[
+\frac{\partial u}{\partial t}
++ \sum_{i=1}^{d} r x_i \frac{\partial u}{\partial x_i}
++ \frac{1}{2} \sum_{i=1}^{d} \sum_{j=1}^{d} \rho_{ij} \sigma_i \sigma_j x_i x_j \frac{\partial^2 u}{\partial x_i \partial x_j}
+- r u = 0
+\]
+
+\begin{itemize}
+    \item $d$: number of assets (dimensions)
+    \item $\sigma_i$: volatility of asset $i$
+    \item $\rho_{ij}$: correlation coefficient between assets $x_i$ and $x_j$
+    \item $r$: risk-free interest rate
+    \item Terminal condition: payoff at maturity
+\end{itemize}
+More complicated than the regular Black-Scholes equation, but it takes into account asset \textbf{interdependencies}.
+\end{frame}
+
+\begin{frame}{Motivation}
+\begin{itemize}
+    \item Multi-asset options depend on several underlying assets (e.g., basket options).
+    \item Pricing them involves solving high-dimensional PDEs (one dimension per asset).
+    \item Traditional methods fail in high dimensions due to the \textbf{curse of dimensionality}.
+    \item We use PINNs with Stochastic Dimension Gradient Descent (SDGD) to overcome this.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{SDGD + PINN}
+\begin{itemize}
+    \item \textbf{Stochastic Dimension Gradient Descent (SDGD):}
+    \begin{itemize}
+        \item Randomly sample $m$ (out of $d$) dimensions each iteration.
+        \item Estimate PDE loss using partial derivatives from sampled dims.
+        \item Reduces per-iteration cost from $O(d)$ to $O(m)$.
+    \end{itemize}
+    \item PINNs compute gradients via autograd; SDGD avoids full-dimension derivatives every step.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Goals}
+\begin{itemize}
+    \item Solve Black-Scholes PDE.
+    \item Measure the speed and accuracy benefits of SDGD.
+    \item Show PINNs can tackle real financial PDEs previously considered intractable.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Blank slide}
+\centering
+
+\end{frame}
+
+\end{document}
