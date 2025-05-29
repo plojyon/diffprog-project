@@ -67,10 +67,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Generate parameters
     params = generate_data_parameters(args.n_assets)
 
-    # Save to file
     with open(args.output, "w") as f:
         json.dump(params, f, indent=2)
 

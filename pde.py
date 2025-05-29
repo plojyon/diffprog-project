@@ -70,10 +70,10 @@ def pde_residual(
                 row.append(d2C_dSidSj)
         d2C_dS2.append(row)
 
-    # Compute the PDE residual
+    # Residual
     residual = dC_dt
 
-    # Add diffusion terms
+    # Diffusion terms
     for i_idx, i in enumerate(selected_dims):
         for j_idx, j in enumerate(selected_dims):
             residual += (
@@ -86,11 +86,11 @@ def pde_residual(
                 * d2C_dS2[i_idx][j_idx]
             )
 
-    # Add drift terms
+    # Drift terms
     for i_idx, i in enumerate(selected_dims):
         residual += r * S[:, i : i + 1] * dC_dS[i_idx]
 
-    # Add discounting term
+    # Discounting term
     residual -= r * C
 
     return residual

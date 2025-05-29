@@ -23,12 +23,6 @@ class BSConfig(TypedDict):
     sdgd_dim_count: int
 
 
-def fill_array(array: List[float], length: int, new_item: float) -> List[float]:
-    """Add new_item to array until it has length length."""
-    missing_items = length - len(array)
-    return array + [new_item] * missing_items
-
-
 class BlackScholesPINN:
     """A Physics-Informed Neural Network (PINN) for the multi-asset Black-Scholes equation."""
 
@@ -89,19 +83,16 @@ class BlackScholesPINN:
         err = f"Model expected {self.config['n_assets']} assets, got {S_data.shape[1]}"
         assert S_data.shape[1] == self.config["n_assets"], err
 
-        # Move data to device
         S_data = S_data.to(self.device)
         t_data = t_data.to(self.device)
         C_data = C_data.to(self.device)
         rho = rho.to(self.device)
 
-        # Initialize lists to track losses
         total_losses = []
         data_losses = []
         pde_losses = []
         real_losses = []
 
-        # Start timing
         start_time = time.time()
         last_real_loss_time = 0
         uncounted_time = 0  # time needed for calculating the real loss
@@ -122,7 +113,6 @@ class BlackScholesPINN:
                     n_assets=self.config["n_assets"],
                 )
 
-                # Move collocation points to device
                 S_colloc = S_colloc.to(self.device)
                 t_colloc = t_colloc.to(self.device)
 
@@ -152,7 +142,6 @@ class BlackScholesPINN:
                 else:
                     real_pde_loss = real_losses[-1]
 
-                # Track losses
                 total_losses.append(loss)
                 data_losses.append(loss_data)
                 pde_losses.append(loss_pde)
@@ -180,7 +169,6 @@ class BlackScholesPINN:
             print("Training interrupted by user")
             stop_reason = "keyboard_interrupt"
 
-        # Calculate training time
         training_time = time.time() - start_time
 
         self._save_training_log(

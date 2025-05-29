@@ -49,22 +49,18 @@ def generate_multi_asset_paths(
     S0 = params["S0"]
     K = params["K"]
 
-    # Generate time points
     t = np.random.uniform(0, T, (n_paths, 1))
 
-    # Generate correlated Brownian motion paths
     W = generate_correlated_brownian_motion(n_paths, n_assets, rho, T)
 
-    # Generate final prices using geometric Brownian motion
+    # final prices
     drift = (r - 0.5 * np.array(sigmas) ** 2) * T
     diffusion = np.array(sigmas) * W
     S = S0 * np.exp(drift + diffusion)
 
-    # Calculate option prices (using a simple basket call option payoff)
+    # option prices
     basket_value = np.mean(S, axis=1, keepdims=True)
     C = np.maximum(basket_value - K, 0) * np.exp(-r * (T - t))
-
-    # Add noise to the prices
     C += np.random.normal(0, params["noise_variance"], size=C.shape)
 
     return S, t, C

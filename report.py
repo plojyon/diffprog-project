@@ -28,11 +28,6 @@ def load_training_logs(models_dir: str) -> Dict[str, Dict]:
         if os.path.exists(log_path):
             with open(log_path, "r") as f:
                 logs[model_dir] = json.load(f)
-                if model_dir == "100-1":
-                    # cook data (multiply by 1e4)
-                    logs[model_dir]["loss_history"]["total"] = [
-                        loss * 1e4 for loss in logs[model_dir]["loss_history"]["total"]
-                    ]
     return logs
 
 
@@ -65,7 +60,6 @@ def plot_loss_vs_epochs(logs: Dict[str, Dict], output_dir: str):
     plt.grid(True)
     plt.yscale("log")  # Use log scale for better visualization
 
-    # Save plot
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(
         os.path.join(output_dir, "loss_vs_epochs.png"), bbox_inches="tight", dpi=300
@@ -100,7 +94,6 @@ def plot_loss_vs_time(logs: Dict[str, Dict], output_dir: str):
     plt.grid(True)
     plt.yscale("log")  # Use log scale for better visualization
 
-    # Save plot
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(
         os.path.join(output_dir, "loss_vs_time.png"), bbox_inches="tight", dpi=300
@@ -134,7 +127,6 @@ def print_summary(logs: Dict[str, Dict]):
 
 
 def main():
-    # Load all training logs
     logs = load_training_logs("models")
 
     if not logs:
